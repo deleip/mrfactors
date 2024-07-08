@@ -69,6 +69,10 @@ calcVoPlivst <- function(other = FALSE, fillGaps = TRUE) {
     if (isTRUE(other)) vopLivst <- mbind(vopLivst, vopOther)
   }
 
+  # remove years with no data
+  years <- where(dimSums(vopLivst, dim = c(1, 3)) == 0)$true$years
+  vopLivst <- vopLivst[, years, , invert = TRUE]
+
   return(list(x = vopLivst,
               weight = NULL,
               unit = "mio USDMER05",

@@ -7,7 +7,7 @@
 #' @importFrom stats reshape
 #' @seealso [readSource()]
 readTFPUSDA <- function() {
- # File
+  # File
   file <- "AgTFPindividualcountries.xlsx"
 
   # Reads countries from the file
@@ -17,7 +17,7 @@ readTFPUSDA <- function() {
   colnames(regions) <- c("Country/territory", "FAO N")
 
   # Available shares and their location in the file
-  names <- c("AG_Labour", "AG_Land", "Livestock", "Machinery", "Materials_Crops", "Materials_Animals")
+  names <- c("AG_Labour", "AG_Land", "Animal_Capital", "Crop_Capital", "Crop_Materials", "Animal_Materials")
   ranges <- c("S3:X182", "AA3:AF182", "BG3:BL182", "AY3:BD182", "BO3:BT182", "BW3:CB182")
 
   # Function to extract the values of the shares and organize the data in a format easy to convert to a magpie object

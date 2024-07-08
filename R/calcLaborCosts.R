@@ -92,32 +92,26 @@ calcLaborCosts <- function(datasource = "ILO", dataVersionILO = "Aug23", subsect
     vopAg[!is.finite(vopAg)] <- 0
 
     # USDA labor cost shares
-    sharesCrops <- calcOutput("FractionInputsUSDA", products = "kcr", aggregate = FALSE)[, , "Labor"]
-    sharesLivst <- calcOutput("FractionInputsUSDA", products = "kli", aggregate = FALSE)[, , "Labor"]
+    shares <- calcOutput("FractionInputsUSDA", aggregate = FALSE)[, , "Labor"]
 
     # closest 5-year step before and after start of VoP data needed for interpolation of shares
     yearsInt <- as.integer(str_split(years, "y", simplify = TRUE)[, 2])
     y <- intersect(paste0("y", seq(min(yearsInt) - min(yearsInt) %% 5, max(yearsInt) - max(yearsInt) %% 5 + 5, 5)),
-                   getItems(sharesCrops, dim = 2))
+                   getItems(shares, dim = 2))
 
     # filling missing values with region average, using production as weight
     h12 <- toolGetMapping("regionmappingH12.csv", type = "regional", where = "mappingfolder")
     weight <- dimSums(collapseDim(calcOutput("Production", aggregate = FALSE)[, , "dm"]), dim = 3.1)
     weight <- time_interpolate(weight, interpolated_year = setdiff(y, getItems(weight, dim = 2)),
                                extrapolation_type = "constant", integrate_interpolated_years = TRUE)[, y, ]
-    sharesCrops <- toolFillWithRegionAvg(sharesCrops[, y, ], valueToReplace = 0, weight = weight,
-                                         regionmapping = h12, verbose = FALSE, warningThreshold = 1)
-    sharesLivst <- toolFillWithRegionAvg(sharesLivst[, y, ], valueToReplace = 0, weight = weight,
-                                         regionmapping = h12, verbose = FALSE, warningThreshold = 1)
-    shares <- setNames(mbind(sharesLivst, sharesCrops), c("Livestock", "Crops"))
-    # assume livestock labor cost share for fish
-    if (isTRUE(inclFish)) shares <- mbind(shares, setNames(sharesLivst, "Fisheries"))
+    shares <- toolFillWithRegionAvg(shares[, y, ], valueToReplace = 0, weight = weight,
+                                    regionmapping = h12, verbose = FALSE, warningThreshold = 1)
 
-    # for REF in 1990 no country has a value, so toolFillWithRegionAvg assigns NA. Use values from 1995 instead:
-    if ("y1990" %in% y) { # subsidy data starts only in 2005
-      ref <- h12$CountryCode[h12$RegionCode == "REF"]
-      shares[ref, 1990, ]  <- shares[ref, 1995, ]
-    }
+    # # for REF in 1990 no country has a value, so toolFillWithRegionAvg assigns NA. Use values from 1995 instead:
+    # if ("y1990" %in% y) { # subsidy data starts only in 2005
+    #   ref <- h12$CountryCode[h12$RegionCode == "REF"]
+    #   costShares[ref, 1990, ]  <- costShares[ref, 1995, ]
+    # }
 
     # interpolate between the five-year-steps
     shares <- time_interpolate(shares,
@@ -126,7 +120,7 @@ calcLaborCosts <- function(datasource = "ILO", dataVersionILO = "Aug23", subsect
                                integrate_interpolated_years = TRUE)[, years, ]
 
     # estimate total labor costs as share of VoP
-    out <- vopAg[, years, ] * shares
+    out <- vopAg[, years, ] * collapseDim(shares)
 
     # aggregate if subsectors is FALSE, but only in cases where both crops and livestock are included
     if (isFALSE(subsectors)) {

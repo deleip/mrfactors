@@ -49,12 +49,15 @@ calcRegressionsILO <- function(subtype = "AgEmplShare", dataVersionILO = "Aug23"
                 description = description))
   }
 
+  cat(paste0("Note: You are recalculating this regression. If this should be the new default regression you",
+             " need to manually save the resulting regression coefficients in the source folder."))
+
   if (subtype == "AgEmplShare") {# Regression to fill missing countries in ILO ag. employment data set
 
     cat(paste0("Note: In case underlying data changed (agricultural employment from ILO, historic population,",
                 " or GDP pc PPP) you should double check the resulting regression."))
     description <- paste0("Regression coeffcients for sqrt(ag. empl. share) ~ log(GDP pc PPP, base = 10) ",
-                        "and a empl. share threshold")
+                          "and a empl. share threshold")
 
     # read original employment dataset from ILO (convert from thous. to mil.)
     dataType <- ifelse(dataVersionILO == "", "EmplByActivityModelled",
