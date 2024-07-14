@@ -168,9 +168,8 @@ calcHourlyLaborCosts <- function(datasource = "USDA_FAO", dataVersionILO = "Aug2
     # fill gaps with estimates using regression of HourlyLaborCost from ILO (US$MER05) ~ GDPpcMER (old version) or
     # log(HourlyLaborCosts) ~ log(GDPpcMER) wotj common slope, but calibrated to countries by shifting intercept
     # depending on first and last hourly labor cost value. Gaps within a timeseries are filled by interpolation
-    cat("TESTING -- USING UPDATED REGRESSION")
     subtype <- ifelse(dataVersionILO == "", "HourlyLaborCosts", paste("HourlyLaborCosts", dataVersionILO, sep = "_"))
-    regCoeff <- readSource("RegressionsILO", subtype = "HourlyLaborCosts_Jul24_test2")
+    regCoeff <- readSource("RegressionsILO", subtype = subtype)
 
     years <- getYears(hourlyCosts, as.integer = TRUE)
 
