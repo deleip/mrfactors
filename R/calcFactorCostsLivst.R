@@ -21,8 +21,8 @@ calcFactorCostsLivst <- function(datasource = "USDA", otherLivst = FALSE) {
     # no VoP data before 1991, data for 2019 incomplete
     years <- setdiff(getYears(vopLivst, as.integer = TRUE), c(1960:1990, 2019))
 
-    # USDA labor cost shares
-    shares <- calcOutput("FractionInputsUSDA", products = "kli", aggregate = FALSE)
+    # USDA labor cost shares (USING THE SAME SHARE AS FOR CROPS)
+    shares <- calcOutput("FractionInputsUSDA", aggregate = FALSE)
     shares <- dimSums(shares[, , c("Labor", "Capital")], dim = 3)
 
     # closest 5-year step before and after start of VoP data needed for interpolation of shares

@@ -57,8 +57,6 @@ calcVoPcrops <- function(fillGaps = TRUE) {
 
     # fill remaining gaps with global averages
     pricesGLO <- collapseDim(calcOutput(type = "PriceAgriculture", datasource = "FAO", aggregate = "GLO"))[, , kPrices]
-    pricesGLOfilledISO <- prices
-    pricesGLOfilledISO[, , ] <- pricesGLO
     prices[prices == 0] <- pricesGLO[prices == 0]
 
     # add missing prices from calcIniFoodPrice for 2005 adjusted by applying average price development over time
@@ -88,6 +86,9 @@ calcVoPcrops <- function(fillGaps = TRUE) {
   l5 <- repValues < 5
   vopKcrAggregated[l5] <- 0
 
+  # remove years with no data
+  years <- where(dimSums(vopKcrAggregated, dim = c(1, 3)) == 0)$true$years
+  vopKcrAggregated <- vopKcrAggregated[, years, , invert = TRUE]
 
   weight <- NULL
   units <- "mio USD05 MER"

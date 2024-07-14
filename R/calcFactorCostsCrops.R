@@ -20,7 +20,7 @@ calcFactorCostsCrops <- function(datasource = "USDA") {
     years <- setdiff(getYears(vopCrops, as.integer = TRUE), c(1960:1990, 2019))
 
     # USDA labor cost shares
-    shares <- calcOutput("FractionInputsUSDA", products = "kcr", aggregate = FALSE)
+    shares <- calcOutput("FractionInputsUSDA", aggregate = FALSE)
     shares <- dimSums(shares[, , c("Labor", "Capital")], dim = 3)
 
     # closest 5-year step before and after start of VoP data needed for interpolation of shares

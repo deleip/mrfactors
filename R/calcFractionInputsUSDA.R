@@ -1,7 +1,6 @@
 #' @title calcFractionInputsUSDA
 #' @description Calculates the factor factor shares for crop production from USDA'S Inputs shares.
 #'
-#' @param products either "kcr" for crops, or "kli" for livestock
 #' @return magpie object of the shares of the factor requirements in agriculture (capital, labor, materials, land).
 #' @author Edna J. Molina Bacca, Debbora Leip
 #' @importFrom dplyr  intersect
@@ -15,95 +14,113 @@
 #' a <- calcOutput("FractionInputsUSDA")
 #' }
 #'
-calcFractionInputsUSDA <- function(products = "kcr") {
-  # value of animals is directly covered in MAgPIE
-  tfpSharesRaw <- readSource("TFPUSDA")[, , "Livestock", invert = TRUE]
+calcFractionInputsUSDA <- function(products = "kcr", keepConstantExtrpolation = TRUE, interpolate = TRUE) {
+  # only looking at crop cost shares
+  tfpShares <- readSource("TFPUSDA")
 
   # assuming the same share in the middle of the decade
-  tfpShares <- magpiesort(time_interpolate(tfpSharesRaw,
-                                           interpolated_year = c((getYears(tfpSharesRaw, as.integer = TRUE) + 5)),
-                                           extrapolation_type = "constant", integrate_interpolated_years = TRUE))
+  if (isTRUE(interpolate)) {
+    tfpShares <- magpiesort(time_interpolate(tfpShares,
+                                            interpolated_year = c((getYears(tfpShares, as.integer = TRUE) + 5)),
+                                            extrapolation_type = "constant", integrate_interpolated_years = TRUE))
+  }
+
+  # remove constant extrapolation
+  if (isFALSE(keepConstantExtrpolation)) {
+    mapping <- toolGetMapping("caseStudiesUSDATFP.csv", where = "mrfactors", type = "regional")
+
+    .cleanCaseStudy <- function(cs) {
+      countries <- mapping[mapping$CaseStudy == cs, "ISO"]
+      tmp <- tfpShares[countries, , ]
+      tmpArray <- as.array(tmp)[1, , ]
+      
+      # remove casestudy if it has completely constant values (currently this is only SSA)
+      if (all(sweep(tmpArray, MARGIN = 2, STATS = tmpArray[1, ], FUN = "=="))) {
+        tmp[countries, , ] <- 0
+        return(tmp)
+      } 
+
+      removeYears <- c()
+
+      # extrapolation to past
+      test <- FALSE
+      i <- 1
+      while (!test) {
+        if (all(tmpArray[i, ] == tmpArray[i + 1, ])) {
+          removeYears <- c(removeYears, i)
+          i <- i + 1
+        } else {
+          test <- TRUE
+        }
+      }
+
+      # extrapolation to past
+      test <- FALSE
+      i <- nrow(tmpArray)
+      while (!test) {
+        if (all(tmpArray[i, ] == tmpArray[i - 1, ])) {
+          removeYears <- c(removeYears, i)
+          i <- i - 1
+        } else {
+          test <- TRUE
+        }
+      }
+
+      tmp[countries, removeYears, ] <- 0
+      return(tmp)
+    }
+
+    caseStudies <- unique(mapping$CaseStudy)
+
+    tfpShares <- magpiesort(mbind(lapply(caseStudies, .cleanCaseStudy)))
+
+    # refill dropped countries with zeros
+    tfpShares <- toolCountryFill(tfpShares, fill = 0)
+  }
+
 
   # reads value of production
   voPAll <- readSource("FAO_online", "ValueOfProd")
-
-  # mio. USD ton. VoP for crops
-  cropProdVop <- voPAll[, ,  "2041|Crops.Gross_Production_Value_(constant_2014_2016_thousand_US$)_(1000_US$)"]
-  # mio. USD ton. VoP for livestock
-  lvstProdVop <- voPAll[, , "2044|Livestock.Gross_Production_Value_(constant_2014_2016_thousand_US$)_(1000_US$)"]
-
-  # costs division between crops and livestock
-  sharedInput <- c("Machinery", "AG_Labour") # factors that convene livestock and crops production
-  cropOnly <- c("AG_Land", "Materials_Crops") # inputs assumed to be dedicated specifically to crop production
-  lvstOnly <- c("Materials_Animals") # inputs assumed to be dedicated specifically to livestock production
-
-  # years to cover
   years <- intersect(getYears(tfpShares), getYears(voPAll))
+  voPAll <- voPAll[, years, ]
+  tfpShares <- tfpShares[, years, ]
 
-  # function to calculate shares
-  .calcFractionShared <- function(costItem, shareVoP, tfpShares, totalInput) {
-    fraction <- shareVoP[, years, ] * tfpShares[, years, costItem] / totalInput
-    fraction[!is.finite(fraction)] <- 0
-    return(fraction)
+  # mio. USD VoP (constant 2014_2016 thousand US$ has values before 1991, current_thousand_US$ does not)
+  vopCrops <- voPAll[, ,  "2041|Crops.Gross_Production_Value_(constant_2014_2016_thousand_US$)_(1000_US$)"]/1000
+  vopLivst <- voPAll[, , "2044|Livestock.Gross_Production_Value_(constant_2014_2016_thousand_US$)_(1000_US$)"]/1000
+  ratio <- collapseDim(vopCrops / (vopCrops + vopLivst))
+
+  # TODO: BETTER WAY TO FILL GAPS?
+  # fill gaps in ratio with global average
+  gloRatio <- dimSums(vopCrops, dim = 1) / (dimSums(vopCrops, dim = 1) + dimSums(vopLivst, dim = 1))
+  for (y in getYears(ratio)) {
+   ratio[where(is.na(ratio[, y, ]))$true$regions, y, ] <- gloRatio[, y, ]
   }
 
-  # calculating shares
+  # split labor costs between crops and livestock
+  if (products == "kli") ratio <- 1 - ratio
+  tfpShares[, , "AG_Labour"] <- tfpShares[, , "AG_Labour"] * ratio
+
+  # mappping of categories
   if (products == "kcr") {
-    # Share of value of production between livestock and crop production
-    shareVoPtotal <- collapseNames(cropProdVop / (cropProdVop + lvstProdVop))
-    shareVoPtotal[!is.finite(shareVoPtotal)] <- 0
-    # just to make sure that shares are zero when there is no production
-    shareVoPcrop <- collapseNames(cropProdVop / cropProdVop)
-    shareVoPcrop[!is.finite(shareVoPcrop)] <- 0
-
-    # to normalize overall summation of considered inputs
-    totalInput <- (shareVoPtotal[, years, ] * dimSums(tfpShares[, years, sharedInput], dim = 3) +
-                     shareVoPcrop[, years, ] * dimSums(tfpShares[, years, cropOnly], dim = 3))
-
-    # calculate shares
-    sharedItems <- mbind(lapply(sharedInput, .calcFractionShared, shareVoPtotal, tfpShares, totalInput))
-    cropItems <- mbind(lapply(cropOnly, .calcFractionShared, shareVoPcrop, tfpShares, totalInput))
-
-    x <- mbind(sharedItems, cropItems)
-    getNames(x) <- c("Capital", "Labor", "Land", "Materials")
-
-    # production as weight
-    production <- dimSums(collapseDim(calcOutput("Production", products = "kcr", aggregate = FALSE)[, , "dm"]), dim = 3)
-
-  } else if (products == "kli") {
-    # Share of value of production between livestock and crop production
-    shareVoPtotal <- collapseNames(lvstProdVop / (cropProdVop + lvstProdVop))
-    shareVoPtotal[!is.finite(shareVoPtotal)] <- 0
-    # just to make sure that shares are zero when there is no production
-    shareVoPlvst <- collapseNames(lvstProdVop / lvstProdVop)
-    shareVoPlvst[!is.finite(shareVoPlvst)] <- 0
-
-    # to normalize overall summation of considered inputs
-    totalInput <- (shareVoPtotal[, years, ] * dimSums(tfpShares[, years, sharedInput], dim = 3) +
-                     shareVoPlvst[, years, ] * dimSums(tfpShares[, years, lvstOnly], dim = 3))
-
-    # calculate shares
-    sharedItems <- mbind(lapply(sharedInput, .calcFractionShared, shareVoPtotal, tfpShares, totalInput))
-    lvstItmes <- mbind(lapply(lvstOnly, .calcFractionShared, shareVoPlvst, tfpShares, totalInput))
-
-    x <- mbind(sharedItems, lvstItmes)
-    getNames(x) <- c("Capital", "Labor", "Materials")
-
-    # Production as weight
-    production <- dimSums(collapseDim(calcOutput("Production", products = "kli", aggregate = FALSE)[, , "dm"]), dim = 3)
-
+    mapping <- data.frame("to" = c("Labor", "Land", "Materials", "Capital"),
+                          "from" = c("AG_Labour", "AG_Land", "Crop_Materials", "Crop_Machinery"))
   } else {
-    stop("Invalid product type")
+    mapping <- data.frame("to" = c("Labor", "Materials", "Capital"),
+                          "from" = c("AG_Labour", "Animal_Materials", "Livestock"))
   }
+  
+  tfpShares <- toolAggregate(tfpShares[, , mapping$from], rel = mapping, from = "from", to = "to", dim = 3)
+  tfpShares <- tfpShares / dimSums(tfpShares, dim = 3)
+  tfpShares[!is.finite(tfpShares)] <- 0
 
-  weight <- x
-  weight[, , ] <- magpiesort(time_interpolate(production[, , ],
-                                              interpolated_year = 2015, extrapolation_type = "constant",
-                                              integrate_interpolated_years = TRUE))[, getYears(x), ]
-  weight[!is.finite(x)] <- 0
-  weight[x == 0] <- 0
+  # vop as aggregation weight
+  vop <- vopCrops + vopLivst
+  weight <- tfpShares
+  weight[, , ] <- vop[, getYears(tfpShares), ]
+  weight[tfpShares == 0] <- 0
 
-  return(list(x = x,
+  return(list(x = tfpShares,
               weight = weight,
               mixed_aggregation = NULL,
               unit = "fraction",
